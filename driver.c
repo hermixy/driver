@@ -4,46 +4,90 @@
 //pour afficher dans le shell : printErrno()
 #include <string.h> //memset
 #include <stdlib.h> //malloc
+#include <taskLib.h> //taskIdSelf
+#include <semLib.h>
 #include "driver.h"
 
+typedef struct fifo
+{
+	int message;
+	struct fifo * next
+}fifo;
+typedef struct listeFifo
+{
+	 fifo * first;
+	 fifo * last;
+	 int taskId;
+	 struct listeFifo * next;
+} listeFifo;
 typedef struct myDev
 {
 	DEV_HDR devHdr;
 	int mode;
 	int opened;
-	char data[tailleMax];
 	int devNumber;
+	struct listeFifo * firstFifo;  
+	SEM_ID semFirst;
 	struct myDev * next;
 } myDev;
 myDev * first = NULL;
+char reg[4];
 int numPilote = -1;
-int fakeReg;
 
 // fonctions standards : open,close,write
 
-int devOpen(myDev * drv)
+int devOpen(myDev * drv, char * name, int mode)
 {
-	if (drv->opened == 1)
+	listeFifo * i = 0;
+	listeFifo * fifo = malloc(sizeof(listeFifo));
+	drv->opened++;
+	drv->mode = mode;
+	memset(fifo->pointeurFifo,0,SIZE_FIFO);
+	fifo->next=NULL;
+	fifo->taskId = taskIdSelf();
+	semMTake(drv->semFirst,NO_WAIT);
+	if (drv->firstFifo==NULL)
 	{
-		errnoSet(ALREADY_OPEN);
-		return -1;
-	} else 
-	{
-		drv->opened = 1;
-		memset(drv->data,0,tailleMax);
-		return (int)drv;
+		drv->firstFifo = fifo;
+	} else {
+		//Add fifo at end of listeFifo
+		for (i=drv->firstFifo;i->next!=NULL;i=i->next);
+		i->next=fifo;
 	}
+	semMGive(drv->semFirst);
+	return (int)drv; //pointer returned is used as arg in devClose!
 }
 int devClose(myDev * drv)
 {
-	if (drv->opened == 1)
+	listeFifo * i = NULL; 
+	if(drv==NULL)
 	{
-		drv->opened =0;
-		return 0;
-	} else {
 		errnoSet(NOT_OPEN);
 		return -1;
 	}
+	if (drv->opened == 0)
+	{
+		errnoSet(NOT_OPEN);
+		return -1;
+	} else {
+		semMTake(drv->semFirst,NO_WAIT);
+		//Find fifo in drv->listFifo
+		if (drv->firstFifo->taskId==taskIdSelf())
+		{
+			drv->firstFifo=drv->firstFifo->next;
+		} else {
+			for (i=drv->firstFifo;i->next->taskId==taskIdSelf();i=i->next);
+			free(i->next);
+			i->next=i->next->next;
+		}
+		semMGive(drv->semFirst);
+		drv->opened--;
+	}
+	return 0;
+}
+int devRead(myDev * drv, char * data, int dataSize)
+{
+	
 }
 /*
 int devWrite(myDev * drv, char * data, int dataSize)
@@ -65,21 +109,9 @@ int devWrite(myDev * drv, char * data, int dataSize)
 	return i;
 }
 */
-
-int devWriteZarb(myDev * drv, char * data, int dataSize)
+void isr()
 {
-	int i = 0;
-	if (drv->opened != 1)
-	{
-		errnoSet(NOT_OPEN);
-		return -1;
-	}
-	for (i=0; i<dataSize && data[i] != '\n'; i++)
-	{
-		putchar(data[i]);
-		putchar(data[i]);
-	}
-	return i;
+	
 }
 
 int devIoctl(myDev * drv, int function, void * args )
@@ -91,6 +123,7 @@ int devIoctl(myDev * drv, int function, void * args )
 		int dataSize;
 	} zarbArgs;
 	switch (function){
+	//TODO: Simple function that prints "lol", ten times
 	case TEST:
 		break;
 	//TODO: TEST !!!
@@ -151,7 +184,18 @@ int devAdd(char * devName,int devNb)
 		errnoSet(DEV_ADD_ERR);
 		return -1;
 	}else{
+		dev->semFirst = semMCreate(SEM_INVERSION_SAFE|SEM_Q_PRIORITY);
+		printf("%d\n",dev->semFirst);
+		if(dev->semFirst==0)
+		{
+			free(dev);
+			errnoSet(INSTALL_ERR);
+			return -1;
+		}
+		//SEM_INVERSION_SAFE prevents devOpen from being interupted
+		//while adding fifo to list
 		dev->devNumber = devNb;
+		dev->firstFifo = NULL;
 		if (first==NULL)
 		{
 			first = dev;
@@ -181,6 +225,7 @@ int devDelete(char* devName)
 		i->next=drv->next;
 	}
 	iosDevDelete((DEV_HDR*)drv);
+	semDelete(drv->semFirst);
 	free(drv);
 	return 0;
 }
@@ -207,10 +252,6 @@ int drvRemove()
 //	return numPilote == -1 ? -1 : 0;
 }
 
-void handler()
-{
-
-}
 /*TEST*/
 /*void hello_world()
 {

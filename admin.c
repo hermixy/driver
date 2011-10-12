@@ -69,6 +69,16 @@ int test()
 		printf("FAIL!\n");
 		return -2;
 	}
+	printf("Add other devices test(lol4):\n");
+	retAdd = devAdd("lol4",1);
+	printf("devAdd returned %d, ",retAdd);
+	if (retAdd==0)
+	{
+		printf("OK!\n");
+	} else {
+		printf("FAIL!\n");
+		return -2;
+	}
 	iosDevShow();
 	getchar();
 	
@@ -93,7 +103,7 @@ int test()
 		return -3;
 	}
 	printf("Test deletion of device at end of linked list\n");
-	retDelete = devDelete("lol3");
+	retDelete = devDelete("lol4");
 	printf("devDelete returned %d,",retDelete);
 	if (retAdd==0)
 	{

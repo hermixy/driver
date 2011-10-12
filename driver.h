@@ -12,7 +12,7 @@
 #define UNKNOWN_DEVICE 10
 #define REMOVE_ERROR 11
 
-#define tailleMax 100
+#define SIZE_FIFO 10
 
 /*OS FUNCTIONS FOR IOCTL*/
 #define TEST 100
