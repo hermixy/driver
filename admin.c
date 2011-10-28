@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <iosLib.h>
 #include <errnoLib.h>
-int test()
+int testStart()
 {
 	int fd = 0;
 	int retInstall = 1;
@@ -27,6 +27,7 @@ int test()
 		printf("FAIL!\n");
 		return -1;
 	}
+	iosDrvShow();
 	getchar();
 	
 	printf("Device add test(lol,1):\n");
@@ -115,7 +116,7 @@ int test()
 	printf("Test deletion of device in the midle of linked list\n");
 	retDelete = devDelete("lol2");
 	printf("devDelete returned %d, ",retDelete);
-	if (retAdd==0)
+	if (retDelete==0)
 	{
 		printf("OK!\n");
 	} else {
@@ -125,7 +126,7 @@ int test()
 	printf("Test deletion of device in front of linked list\n");
 	retDelete = devDelete("lol");
 	printf("devDelete returned %d, ",retDelete);
-	if (retAdd==0)
+	if (retDelete==0)
 	{
 		printf("OK!\n");
 	} else {
@@ -135,7 +136,7 @@ int test()
 	printf("Test deletion of device at end of linked list\n");
 	retDelete = devDelete("lol4");
 	printf("devDelete returned %d,",retDelete);
-	if (retAdd==0)
+	if (retDelete==0)
 	{
 		printf("OK!\n");
 	} else {
@@ -143,5 +144,23 @@ int test()
 		return -3;
 	}	
 	iosDevShow();
+	return 0;
+}
+int testStop()
+{
+	int retRemove;
+	printf("Test brutal removal of driver, with open devices\n");
+	retRemove = drvRemove();
+	printf("drvRemove returned %d,",retRemove);
+	if (retRemove==0)
+	{
+		printf("OK!\n");
+	} else {
+		printf("FAIL : %d!\n",errnoGet());
+		return -4;
+	}	
+	iosFdShow();
+	iosDevShow();
+	iosDrvShow();
 	return 0;
 }

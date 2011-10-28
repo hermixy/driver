@@ -21,6 +21,7 @@ int initFifo(fifo * iFifo)
 	} else {
 		iFifo->start = 0;
 		iFifo->stop = 0;
+		iFifo->count = 0;
 		iFifo->nextFifo = NULL;
 		iFifo->initialized = 1;
 	}
@@ -36,7 +37,7 @@ void deleteFifo(fifo * dFifo)
  * In both write and read functions we never take boths mutex and count sems at 
  * the same time, therefore we're sure to avoid race conditions.
  */
-int writeFifo(fifo * wFifo, uint16_t data )
+int writeFifo(fifo * wFifo, msg data )
 {
 	//write data at end of fifo
 	semTake(wFifo->semMData,WAIT_FOREVER);
@@ -57,10 +58,16 @@ int writeFifo(fifo * wFifo, uint16_t data )
 	semGive(wFifo->semCCount);
 	return 0;
 }
-int readFifo(fifo * rFifo, uint16_t * data)
+int readFifo(fifo * rFifo, msg * data, int timeout)
 {
-	semTake(rFifo->semCCount,WAIT_FOREVER);
-	//Wait until there is something to read
+	int ret = 0;
+	semTake(rFifo->semCCount, timeout);
+	//Wait until there is something to read or timeout expire
+	if (ret==ERROR)
+	{
+		//errno has been set by semTake
+		return -1;
+	}
 	semTake(rFifo->semMData,WAIT_FOREVER);
 	if (rFifo->start == rFifo->stop)
 	{

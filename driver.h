@@ -17,15 +17,18 @@
 #define OPENNED_DEV 15
 #define TASK_ERR 16
 #define MSGQ_ERR 17
+#define NOT_REGISTERED 18
+#define SHORT_BUFF 19
 
 #define SIZE_FIFO 20
 
 /*OS FUNCTIONS FOR IOCTL*/
 #define TEST 100
-
+char reg[4]; 		//fake register used by physical device to send us messages
 int drvInstall();
 int drvRemove();
 int devAdd(char * devName,int devNb);
 int devDelete(char * devName);
+void isr();
 
 #endif
