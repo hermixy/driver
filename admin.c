@@ -164,3 +164,39 @@ int testStop()
 	iosDrvShow();
 	return 0;
 }
+int testClose()
+{
+	int ret;
+	printf("Test removal of openned devices(lol1)\n");
+	ret = devDelete("lol1");
+	printf("drvDelete returned %d,",ret);
+	if (ret==-1)
+	{
+		printf("OK : %d\n",errnoGet());
+	} else {
+		printf("FAIL!\n");
+		return -4;
+	}	
+	printf("Test removal of openned devices(lol3)\n");
+	ret = devDelete("lol3");
+	printf("drvDelete returned %d,",ret);
+	if (ret==-1)
+	{
+		printf("OK : %d\n",errnoGet());
+	} else {
+		printf("FAIL!\n");
+		return -4;
+	}	
+	return 0;
+	printf("Test removal of closed devices(lol2)\n");
+	devAdd("lol2",42);
+	ret = devDelete("lol2");
+	printf("drvDelete returned %d,",ret);
+	if (ret==0)
+	{
+		printf("OK!\n");
+	} else {
+		printf("FAIL : %d\n",errnoGet());
+		return -4;
+	}	
+}

@@ -8,12 +8,12 @@ int initFifo(fifo * iFifo)
 	{
 		return -1;
 	}
-	iFifo->semMData = semMCreate(SEM_INVERSION_SAFE|SEM_Q_PRIORITY);
+	iFifo->semMData = semMCreate(SEM_Q_FIFO);
 	if (iFifo->semMData==NULL)
 	{
 		return -1;
 	}
-	iFifo->semCCount = semCCreate(SEM_Q_PRIORITY,0);
+	iFifo->semCCount = semCCreate(SEM_Q_FIFO,0);
 	if (iFifo->semCCount==NULL)
 	{
 		semDelete(iFifo->semMData);
@@ -56,25 +56,30 @@ int writeFifo(fifo * wFifo, msg data )
 	}
 	semGive(wFifo->semMData);
 	semGive(wFifo->semCCount);
+	printf("sem given\n");
 	return 0;
 }
 int readFifo(fifo * rFifo, msg * data, int timeout)
 {
 	int ret = 0;
-	semTake(rFifo->semCCount, timeout);
+	ret = semTake(rFifo->semCCount, timeout);
 	//Wait until there is something to read or timeout expire
 	if (ret==ERROR)
 	{
 		//errno has been set by semTake
+		printf("nothing to read\n");
 		return -1;
 	}
+	printf("sem taken\n");
 	semTake(rFifo->semMData,WAIT_FOREVER);
+	printf("start = %d, stop = %d\n",rFifo->start,rFifo->stop);
 	if (rFifo->start == rFifo->stop)
 	{
 		//fifo empty, nothing to read : exit and cry
-		//since we added the semTake(semCount) call, this should NEVER happen
-		//if it does something is very wrong
+		//since we added the semTake(semCount) call, this should never happen
+		//if it does, something is very wrong
 		semGive(rFifo->semMData);
+		printf("big failure : start = %d, stop = %d\n",rFifo->start,rFifo->stop);
 		return -1;
 	}//otherwise :
 	//Read data

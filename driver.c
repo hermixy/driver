@@ -26,13 +26,13 @@ myDev * first = NULL; //entry point to the device list (protected by semMAdmin)
 int numPilote = -1; //useful to test driver installation (protected by semMAdmin)
 int tMsgDispatchID; //dispatch task id, needed to delete it at driver removal time
 MSG_Q_ID isrmq; 	//msg queue used by isr to communicate with dispatch task 
-SEM_ID semMAdmin; 	//Allowing multiple acces to the admin API makes no sense,
+SEM_ID semMAdmin = 0; 	//Allowing multiple acces to the admin API makes no sense,
 					//and can be dangerous in numerous occasions, therefore we forbid it. 
 
 /* 
  * ios/user functions API : open,close,read 
  */
-int devOpen(myDev * drv, char * name, int mode)
+int devOpen(myDev * dev, char * name, int mode)
 {
 	fifo * i = 0;
 	//Create a new fifo for this app and initialize it :
@@ -45,65 +45,65 @@ int devOpen(myDev * drv, char * name, int mode)
 	initFifo(newFifo);
 	newFifo->taskId = taskIdSelf();
 	//From now on we'll acces the device data, let's require the sem :
-	if(semTake(drv->semMData,WAIT_FOREVER)!=OK)
+	if(semTake(dev->semMData,WAIT_FOREVER)!=OK)
 	{
 		free(newFifo);
 		errnoSet(SEM_ERR);
 		return -1;
 	}
-	drv->openned++;		//keep track of the number of tasks that have openned this device
-	drv->mode = mode;	//this seems useless, todo : check
+	dev->openned++;		//keep track of the number of tasks that have openned this device
+	dev->mode = mode;	//this seems useless, todo : check
 	//Add fifo at end of listeFifo :
-	if (drv->firstFifo==NULL)
+	if (dev->firstFifo==NULL)
 	{
-		drv->firstFifo = newFifo;
+		dev->firstFifo = newFifo;
 	} else {
-		for (i=drv->firstFifo;i->nextFifo!=NULL;i=i->nextFifo);
+		for (i=dev->firstFifo;i->nextFifo!=NULL;i=i->nextFifo);
 		i->nextFifo=newFifo;
 	}
-	semGive(drv->semMData);
-	return (int)drv; //pointer returned is used as arg in devClose!
+	semGive(dev->semMData);
+	return (int)dev; //pointer returned is used as arg in devClose!
 }
-int devClose(myDev * drv)
+int devClose(myDev * dev)
 {
 	fifo * i = NULL; 
 	fifo * temp = NULL;
-	if(drv==NULL)
+	if(dev==NULL)
 	{
 		errnoSet(NOT_OPEN);
 		return -1;
 	}
 	//Prevent anyone from accessing this device while we're modifying it :
-	if(semTake(drv->semMData,WAIT_FOREVER)==-1)
+	if(semTake(dev->semMData,WAIT_FOREVER)==-1)
 	{
 		errnoSet(SEM_ERR);
 		return -1;
 	}
-	if (drv->openned == 0)
+	if (dev->openned == 0)
 	{
 		errnoSet(NOT_OPEN);
 		return -1;
 	} else {
 		//Find fifo corresponding to this task in drv->listFifo and deallocate it
-		if (drv->firstFifo->taskId==taskIdSelf())
+		if (dev->firstFifo->taskId==taskIdSelf())
 		{
-			temp=drv->firstFifo;
-			drv->firstFifo=temp->nextFifo;
+			temp=dev->firstFifo;
+			dev->firstFifo=temp->nextFifo;
 			deleteFifo(temp);
 			free(temp);
 		} else {
-			for (i=drv->firstFifo;i->nextFifo->taskId==taskIdSelf();i=i->nextFifo);
+			for (i=dev->firstFifo;i->nextFifo->taskId==taskIdSelf();i=i->nextFifo);
 			temp=i->nextFifo;
 			i->nextFifo=temp->nextFifo;
 			deleteFifo(temp);
 			free(temp);
 		}
-		drv->openned--;
+		dev->openned--;
 	}
-	semGive(drv->semMData);
+	semGive(dev->semMData);
 	return 0;
 }
-int devRead(myDev * drv, char * data, size_t dataSize)
+int devRead(myDev * dev, char * data, size_t dataSize)
 {
 	int taskId;
 	fifo * i;
@@ -111,7 +111,14 @@ int devRead(myDev * drv, char * data, size_t dataSize)
 	int buffSize = dataSize/sizeof(msg); //I can't see any reason why sizeof(msg)
 										//should change, but let's not take any chances
 	int msgsRead = 0;
+	printf("1\n");
 	taskId = taskIdSelf();
+	printf("2\n");
+	if (dev==NULL)
+	{
+		errnoSet(NOT_OPEN);
+		return -1;
+	}
 	//we'll only send whole messages, thus if dataSize<sizeof(msg),
 	//we can't send anything :
 	if (dataSize<sizeof(msg))
@@ -119,22 +126,42 @@ int devRead(myDev * drv, char * data, size_t dataSize)
 		errnoSet(SHORT_BUFF);
 		return -1;
 	}
+	printf("3\n");
+	if(semTake(dev->semMData,WAIT_FOREVER)==-1)
+	{
+		errnoSet(SEM_ERR);
+		return -1;
+	}
+	printf("4\n");
 	//find out wich fifo is our own:
-	for (i=drv->firstFifo; i->taskId=taskId; i=i->nextFifo);
+	for (i=dev->firstFifo; i!=NULL && i->taskId!=taskId; i=i->nextFifo);
+	if (i==NULL)
+	{
+		errnoSet(NOT_OPEN);
+		return -1;
+	}
+	printf("5\n");
+	semGive(dev->semMData);
+	printf("6\n");
 	if (i==NULL)
 	{
 		//We have nothing to write on? This shouldn't happen either...
 		errnoSet(NOT_REGISTERED);
 		return -1;
 	}
+	printf("7\n");
 	readFifo(i,&(buff[0]), WAIT_FOREVER); //First call block if fifo empty, cf specs.
+	printf("8\n");
 	msgsRead++;
-	while (msgsRead<buffSize && readFifo(i,&(buff[msgsRead]),NO_WAIT)!=0)
+	printf("9, bufferSize=%d, msgsRead=%d\n",buffSize,msgsRead);
+	while (msgsRead<buffSize && readFifo(i,&(buff[msgsRead]),NO_WAIT)==0)
 	{
 		//Let's read messages until fifo is empty or until the data buffer is 
 		//to full to take whole messages
 		msgsRead++;
+		printf("9.1\n");
 	}
+	printf("10\n");
 	return msgsRead*sizeof(msg);
 	
 }
@@ -171,8 +198,8 @@ int msgDispatch(void)
 	myDev * i;  
 	fifo * j;
 	//This previous two variables are used to search through all devices.
-	char value[4]; 			//Local storage for isr message
-	int sensorNb;
+	char value[] = {0,0,0,0}; 			//Local storage for isr message
+	short int sensorNb = 0;
 	struct timespec timev;	//Used to store timestamp
 	msg message;	
 	for (;;)
@@ -182,9 +209,12 @@ int msgDispatch(void)
 			sleep(1);
 			continue;
 		}
-		memcpy(&sensorNb,&value,2); 			//get sensor number
-		memcpy(&(message.mdata),&value+2,2);	//get sensor value and store it in message
+		printf("message received!\n");
+		memcpy(&sensorNb,value,2); 			//get sensor number
+		memcpy(&(message.mdata),value+2,2);	//get sensor value and store it in message
+		printf("sensor : %d, value : %d\n",sensorNb,message.mdata);
 		semTake(semMAdmin,WAIT_FOREVER);
+		printf("looking for devices...\n");
 		//We can't afford to have an acces to the device linked list while we
 		//are looking trough it
 		
@@ -204,9 +234,12 @@ int msgDispatch(void)
 			if (i->devNumber == sensorNb)
 			{//this is the logical device corresponding to the sender's id :
 				semGive(semMAdmin);//From this point on, we'll only acces the data. 
+				printf("found device : %s\n",i->devHdr.name);
 				//dispatch message to all apps listening to this device :
+				semTake(i->semMData,WAIT_FOREVER);
 				for(j=i->firstFifo; j!=NULL; j=j->nextFifo)
 				{
+					semGive(i->semMData);
 					message.mnb=j->count;
 					j->count++;
 					clock_gettime(CLOCK_REALTIME, &timev);
@@ -215,12 +248,16 @@ int msgDispatch(void)
 					//We do not care whether the fifo is full or not,
 					//as we can't really do anything from here if it is. 
 					//Therefore there is no return code test.
+					semTake(i->semMData,WAIT_FOREVER);
+					printf("message written in fifo \n");
 				}
+				semGive(i->semMData);
 				//There is only one logical device per sensor and we have found it,
 				//it is then useless to keep on looping onto devices, let's exit isr.
 				break;
 			}
 		}
+		semGive(semMAdmin);
 	}
 	return 0; //just to avoid compiler warnings
 }
@@ -232,18 +269,16 @@ int msgDispatch(void)
  */
 int drvInstall()
 {
-	if (semTake(semMAdmin,NO_WAIT)==-1 && errnoGet()==S_objLib_OBJ_ID_ERROR)
+	if (semMAdmin==0)
 	{//The semaphore hasn't been created yet : the driver has not been installed yet,
 	 //let's do it
-		semMAdmin = semMCreate(SEM_INVERSION_SAFE|SEM_Q_PRIORITY);
+		semMAdmin = semMCreate(SEM_Q_FIFO);
 		if(semMAdmin==0)
 		{
 			errnoSet(SEM_ERR);
 			return -1;
 		}
 	} else {
-		semGive(semMAdmin);//If semTake has previously succeded we must now release it
-		//This driver has already been installed, return now.
 		errnoSet(ALREADY_INSTALLED);
 		return -1;
 	}
@@ -254,16 +289,18 @@ int drvInstall()
 		errnoSet(MSGQ_ERR);
 		return -1;
 	}
-	tMsgDispatchID = taskSpawn("tMsgDispatch",1,0,300,msgDispatch,0,0,0,0,0,0,0,0,0,0);
+	tMsgDispatchID = taskSpawn("tMsgDispatch",0,0,1000,msgDispatch,(int)semMAdmin,0,0,0,0,0,0,0,0,0);
 	//This task will dispatch a msg received by the isr and sleep the rest of the time.
 	//It needs to be fast to prevent isr msg queue to fill up, hence the high priority
+	//It's also nice for tests if his priority is superior than the shell's one, which
+	//is set to 1
 	if (tMsgDispatchID==-1)
 	{
 		msgQDelete(isrmq);
 		errnoSet(TASK_ERR);
 		return -1;
 	}
-	numPilote=iosDrvInstall(0,0,devOpen,devClose,0,0,0); //Register device in ios
+	numPilote=iosDrvInstall(0,0,devOpen,devClose,devRead,0,0); //Register device in ios
 	if (numPilote == -1)
 	{
 		msgQDelete(isrmq);
@@ -297,7 +334,8 @@ int devAdd(char * devName,int devNb)
 	dev->next = NULL; //it's the last one in linked list
 	dev->devNumber = devNb;
 	dev->firstFifo = NULL; //no one has openned this device just yet
-	dev->semMData = semMCreate(SEM_INVERSION_SAFE|SEM_Q_PRIORITY);
+	dev->openned = 0;
+	dev->semMData = semMCreate(SEM_Q_FIFO);
 	//semMDATA will prevent multiple acces to device members used by apps during
 	//open, read and close
 	if(dev->semMData==0)
@@ -373,8 +411,8 @@ int devDelete(char* devName)
 {
 	myDev * i = first;
 	char * pNameTail;
-	myDev * drv = (myDev*) iosDevFind (devName,&pNameTail);
-	if ((*pNameTail)!='\0' || drv==NULL)
+	myDev * dev = (myDev*) iosDevFind (devName,&pNameTail);
+	if ((*pNameTail)!='\0' || dev==NULL)
 	//If pNameTail is not '\0', either we don't have an exact match
 	//or we have no match at all
 	{
@@ -383,32 +421,32 @@ int devDelete(char* devName)
 		return -1;
 	}
 	if(semTake(semMAdmin,WAIT_FOREVER)==-1)
-	{//The driver probably hasn't been created yet.
+	{
 		errnoSet(SEM_ERR);
 		return -1;
 	}
-	semTake(drv->semMData,WAIT_FOREVER);
-	if (drv->openned != 0)
+	semTake(dev->semMData,WAIT_FOREVER);
+	if (dev->openned != 0)
 	{
 		//There are still openned file descriptors on this device,
 		//we can't delete it, give back semaphores and leave.
-		semGive(drv->semMData);
+		semGive(dev->semMData);
 		errnoSet(OPENNED_DEV);
 		semGive(semMAdmin);
 		return -1;
 	}
-	iosDevDelete((DEV_HDR*)drv); //This only prevents further oppenings. 
+	iosDevDelete((DEV_HDR*)dev); //This only prevents further oppenings. 
 	//Find and delete the device in device list :
-	if (drv==first)
+	if (dev==first)
 	{
-		first=drv->next;
+		first=dev->next;
 	} else {
-		for (i=first;i->next!=drv;i=i->next);
-		i->next=drv->next;
+		for (i=first;i->next!=dev;i=i->next);
+		i->next=dev->next;
 	}
-	semTake(drv->semMData,WAIT_FOREVER); //Let pending ops on this dev finish
-	semDelete(drv->semMData); //We don't need to release it to delete it
-	free(drv);
+	semTake(dev->semMData,WAIT_FOREVER); //Let pending ops on this dev finish
+	semDelete(dev->semMData); //We don't need to release it to delete it
+	free(dev);
 	semGive(semMAdmin);
 	return 0;
 }
@@ -417,15 +455,14 @@ int drvRemove()
 {
 	myDev * i = first;
 	myDev * drv;
+	if (semMAdmin == 0)
+	{
+		errnoSet(NOT_INSTALLED);
+		return -1;
+	}
 	if (semTake(semMAdmin,WAIT_FOREVER)==-1)
 	{
 		errnoSet(SEM_ERR);
-		return -1;
-	}
-	if (numPilote == -1)
-	{
-		errnoSet(NOT_INSTALLED);
-		semGive(semMAdmin);
 		return -1;
 	}
 	if (iosDrvRemove(numPilote,1) == -1) //And force closure of open files
@@ -447,6 +484,8 @@ int drvRemove()
 		free(drv);
 	}
 	numPilote = -1;
+	first = NULL;
 	semDelete(semMAdmin);
+	semMAdmin=0;
 	return 0;
 }

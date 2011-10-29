@@ -19,7 +19,7 @@ int sensor()
 		i++;
 		i = i%sensorsSize;
 		memcpy(reg,&(sensors[i]),2);
-		memcpy(&reg+2,&value,2);
+		memcpy(reg+2,&value,2);
 		isr(); //fake interrupt
 	}
 }
