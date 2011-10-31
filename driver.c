@@ -420,12 +420,17 @@ int devDelete(char* devName)
 		semGive(semMAdmin);
 		return -1;
 	}
+	if(semMAdmin==0)
+	{
+		errnoSet(NOT_INSTALLED);
+		return -1;
+	}
 	if(semTake(semMAdmin,WAIT_FOREVER)==-1)
 	{
 		errnoSet(SEM_ERR);
 		return -1;
 	}
-	semTake(dev->semMData,WAIT_FOREVER);
+	
 	if (dev->openned != 0)
 	{
 		//There are still openned file descriptors on this device,
